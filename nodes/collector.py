@@ -213,7 +213,7 @@ class DistributedCollectorNode:
                             from comfy_api.latest import Types
                             with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
                                 tmp_name = tmp.name
-                            video.save_to(tmp_name, format=Types.VideoContainer("mp4"), codec="auto")
+                            video.save_to(tmp_name, format=Types.VideoContainer("mp4"), codec=Types.VideoCodec("auto"))
                             with open(tmp_name, 'rb') as f:
                                 video_bytes = f.read()
                         finally:
@@ -596,8 +596,12 @@ class DistributedCollectorNode:
                     with open(temp_file, 'wb') as f:
                         f.write(collected_video)
                     collected_video = InputImpl.VideoFromFile(temp_file)
+                    log(f"Master - Successfully wrapped video bytes into InputImpl: {type(collected_video)}")
                 except Exception as e:
-                    debug_log(f"Master - Could not wrap video bytes in InputImpl: {e}")
+                    import traceback
+                    log(f"Master - Could not wrap video bytes in InputImpl: {e}\n{traceback.format_exc()}")
+                
+            log(f"Master - Returning collected_video of type: {type(collected_video)}")
 
             try:
                 combined = self._reorder_and_combine_tensors(
