@@ -40,6 +40,7 @@ class DistributedCollectorNode:
             "optional": {
                 "images": ("IMAGE",),
                 "audio": ("AUDIO",),
+                "video": ("VIDEO",),
             },
             "hidden": {
                 "multi_job_id": ("STRING", {"default": ""}),
@@ -53,8 +54,8 @@ class DistributedCollectorNode:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO")
-    RETURN_NAMES = ("images", "audio")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "VIDEO")
+    RETURN_NAMES = ("images", "audio", "video")
     FUNCTION = "run"
     CATEGORY = "image"
     
@@ -104,7 +105,7 @@ class DistributedCollectorNode:
             return None
         return {"waveform": torch.cat(waveforms, dim=-1), "sample_rate": sample_rate}
 
-    def run(self, images=None, load_balance=False, audio=None, multi_job_id="", is_worker=False, master_url="", enabled_worker_ids="[]", worker_batch_size=1, worker_id="", pass_through=False, delegate_only=False):
+    def run(self, images=None, load_balance=False, audio=None, video=None, multi_job_id="", is_worker=False, master_url="", enabled_worker_ids="[]", worker_batch_size=1, worker_id="", pass_through=False, delegate_only=False):
         if images is not None:
             images = self._normalize_images_input(images)
         audio = self._normalize_audio_input(audio)
@@ -132,13 +133,14 @@ class DistributedCollectorNode:
         if not multi_job_id or pass_through:
             if pass_through:
                 debug_log("Collector: pass-through mode enabled, returning images unchanged")
-            return (images, audio if audio is not None else empty_audio)
+            return (images, audio if audio is not None else empty_audio, video)
 
         # Use async helper to run in server loop
         result = run_async_in_server_loop(
             self.execute(
                 images,
                 audio,
+                video,
                 load_balance,
                 multi_job_id,
                 is_worker,
@@ -151,8 +153,8 @@ class DistributedCollectorNode:
         )
         return result
 
-    async def send_batch_to_master(self, image_batch, audio, multi_job_id, master_url, worker_id):
-        """Send an image batch, optionally with audio, or an audio-only completion."""
+    async def send_batch_to_master(self, image_batch, audio, video, multi_job_id, master_url, worker_id):
+        """Send an image batch, optionally with audio and/or video."""
         encoded_audio = encode_audio_payload(audio)
         session = await get_client_session()
         url = f"{master_url}/distributed/job_complete"
@@ -160,8 +162,8 @@ class DistributedCollectorNode:
         payloads = []
         batch_size = 0 if image_batch is None else image_batch.shape[0]
         if batch_size == 0:
-            if encoded_audio is None:
-                raise ValueError("Worker completion requires image or audio data")
+            if encoded_audio is None and video is None:
+                raise ValueError("Worker completion requires image, audio, or video data")
             payloads.append(
                 {
                     "job_id": str(multi_job_id),
@@ -189,17 +191,38 @@ class DistributedCollectorNode:
                 payloads.append(payload)
 
         for payload in payloads:
-            timeout_seconds = 60 if "image" in payload else 600
+            timeout_seconds = 600
             try:
-                async with session.post(
-                    url,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=timeout_seconds),
-                ) as response:
-                    response.raise_for_status()
+                if video is not None and payload.get("is_last"):
+                    form_data = aiohttp.FormData()
+                    form_data.add_field('metadata', json.dumps(payload), content_type='application/json')
+                    
+                    video_bytes = None
+                    if isinstance(video, (bytes, bytearray)):
+                        video_bytes = video
+                    elif hasattr(video, 'read'):
+                        video_bytes = video.read()
+                    elif isinstance(video, dict) and 'bytes' in video:
+                        video_bytes = video['bytes']
+                    else:
+                        video_bytes = str(video).encode('utf-8')
+                        
+                    form_data.add_field('video', video_bytes, content_type='application/octet-stream')
+                    async with session.post(
+                        url,
+                        data=form_data,
+                        timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                    ) as response:
+                        response.raise_for_status()
+                else:
+                    async with session.post(
+                        url,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                    ) as response:
+                        response.raise_for_status()
             except Exception as e:
-                media_type = "image/audio" if "image" in payload else "audio-only"
-                log(f"Worker - Failed to send canonical {media_type} envelope to master: {e}")
+                log(f"Worker - Failed to send payload to master: {e}")
                 debug_log(f"Worker - Full error details: URL={url}")
                 raise
 
@@ -319,13 +342,13 @@ class DistributedCollectorNode:
             return ensure_contiguous(fallback_images)
         return None
 
-    async def execute(self, images, audio, load_balance=False, multi_job_id="", is_worker=False, master_url="", enabled_worker_ids="[]", worker_batch_size=1, worker_id="", delegate_only=False):
+    async def execute(self, images, audio, video=None, load_balance=False, multi_job_id="", is_worker=False, master_url="", enabled_worker_ids="[]", worker_batch_size=1, worker_id="", delegate_only=False):
         if is_worker:
             # Worker mode: send images and audio to master in a single batch
             image_count = 0 if images is None else images.shape[0]
             debug_log(f"Worker - Job {multi_job_id} complete. Sending {image_count} image(s) to master")
-            await self.send_batch_to_master(images, audio, multi_job_id, master_url, worker_id)
-            return (images, audio if audio is not None else self.EMPTY_AUDIO)
+            await self.send_batch_to_master(images, audio, video, multi_job_id, master_url, worker_id)
+            return (images, audio if audio is not None else self.EMPTY_AUDIO, video)
         else:
             delegate_mode = delegate_only or is_master_delegate_only()
             # Master mode: collect images and audio from workers
@@ -341,7 +364,7 @@ class DistributedCollectorNode:
             expected_workers = set(enabled_workers)
             num_workers = len(expected_workers)
             if num_workers == 0:
-                return (images, audio if audio is not None else self.EMPTY_AUDIO)
+                return (images, audio if audio is not None else self.EMPTY_AUDIO, video)
 
             # Create the queue before any expensive local work to avoid job_complete race.
             async with prompt_server.distributed_jobs_lock:
@@ -371,6 +394,7 @@ class DistributedCollectorNode:
             # Initialize storage for collected images and audio
             worker_images = {}  # Dict to store images by worker_id and index
             worker_audio = {}   # Dict to store audio by worker_id
+            collected_video = video
             
             # Collect images until all workers report they're done
             collected_count = 0
@@ -430,6 +454,11 @@ class DistributedCollectorNode:
                         if result_audio is not None:
                             worker_audio[worker_id] = result_audio
                             debug_log(f"Master - Got audio from worker {worker_id}")
+
+                        result_video = result.get('video')
+                        if result_video is not None:
+                            collected_video = result_video
+                            debug_log(f"Master - Got video from worker {worker_id}")
 
                         # Record activity and refresh timeout baseline
                         last_activity = time.time()
@@ -544,13 +573,13 @@ class DistributedCollectorNode:
                     worker_images, enabled_workers, master_batch_size, images_on_cpu, delegate_mode, images
                 )
                 if combined is None:
-                    debug_log(f"Master - Job {multi_job_id} complete with audio only")
+                    debug_log(f"Master - Job {multi_job_id} complete with audio/video only")
                 else:
                     debug_log(f"Master - Job {multi_job_id} complete. Combined {combined.shape[0]} images total "
                               f"(master: {master_batch_size}, workers: {combined.shape[0] - master_batch_size})")
 
-                return (combined, combined_audio)
+                return (combined, combined_audio, collected_video)
             except Exception as e:
                 log(f"Master - Error combining images: {e}")
                 # Preserve collected audio even when image assembly fails.
-                return (images, combined_audio)
+                return (images, combined_audio, collected_video)

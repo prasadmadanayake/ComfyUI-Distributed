@@ -272,10 +272,30 @@ async def check_file_endpoint(request):
 
 @server.PromptServer.instance.routes.post("/distributed/job_complete")
 async def job_complete_endpoint(request):
-    try:
-        data = await request.json()
-    except Exception as exc:
-        return await handle_api_error(request, f"Invalid JSON payload: {exc}", 400)
+    video_bytes = None
+    content_type = getattr(request, 'content_type', '')
+    if content_type == 'multipart/form-data':
+        try:
+            reader = await request.multipart()
+            data = None
+            while True:
+                field = await reader.next()
+                if field is None:
+                    break
+                if field.name == 'metadata':
+                    metadata_str = await field.read()
+                    data = json.loads(metadata_str.decode('utf-8'))
+                elif field.name == 'video':
+                    video_bytes = await field.read()
+            if data is None:
+                return await handle_api_error(request, "Missing metadata in multipart payload", 400)
+        except Exception as exc:
+            return await handle_api_error(request, f"Invalid multipart payload: {exc}", 400)
+    else:
+        try:
+            data = await request.json()
+        except Exception as exc:
+            return await handle_api_error(request, f"Invalid JSON payload: {exc}", 400)
 
     if not isinstance(data, dict):
         return await handle_api_error(request, "Expected a JSON object body", 400)
@@ -297,8 +317,9 @@ async def job_complete_endpoint(request):
             errors.append("batch_idx: expected non-negative integer")
         image_provided = image_payload is not None
         audio_provided = audio_payload is not None
-        if not image_provided and not audio_provided:
-            errors.append("expected at least one of image or audio")
+        video_provided = video_bytes is not None
+        if not image_provided and not audio_provided and not video_provided:
+            errors.append("expected at least one of image, audio or video")
         if image_provided and (not isinstance(image_payload, str) or not image_payload.strip()):
             errors.append("image: expected non-empty base64 PNG string")
         if audio_provided and not isinstance(audio_payload, dict):
@@ -330,6 +351,7 @@ async def job_complete_endpoint(request):
                             "image_index": int(batch_idx),
                             "is_last": is_last,
                             "audio": decoded_audio,
+                            "video": video_bytes,
                         }
                     )
                     queue_size = pending.qsize()

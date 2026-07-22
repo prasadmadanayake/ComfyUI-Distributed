@@ -338,7 +338,7 @@ class JobCompleteAudioPayloadTests(unittest.IsolatedAsyncioTestCase):
         response = await job_routes.job_complete_endpoint(request)
 
         self.assertEqual(response.status, 400)
-        self.assertIn("image or audio", response.payload.get("message", "").lower())
+        self.assertIn("image, audio or video", response.payload.get("message", "").lower())
 
     async def test_job_complete_rejects_invalid_image_even_when_audio_is_present(self):
         request = _FakeRequest(

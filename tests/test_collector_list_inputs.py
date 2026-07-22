@@ -135,7 +135,7 @@ def test_audio_only_pass_through_returns_no_images_and_preserves_audio():
     collector = _load_collector_module().DistributedCollectorNode()
     audio = {"waveform": torch.ones(1, 2, 4), "sample_rate": 48000}
 
-    images, returned_audio = collector.run(images=None, audio=[audio])
+    images, returned_audio, _ = collector.run(images=None, audio=[audio])
 
     assert images is None
     assert returned_audio is audio
@@ -155,7 +155,7 @@ def test_collector_rejects_missing_images_and_audio():
 def test_delegate_only_master_allows_no_local_media_input():
     collector = _load_collector_module().DistributedCollectorNode()
 
-    images, audio = collector.run(
+    images, audio, _ = collector.run(
         images=None,
         audio=None,
         multi_job_id=["delegate-audio-job"],
@@ -172,7 +172,7 @@ def test_pass_through_collapses_comfyui_image_list_to_batch_and_unwraps_hidden_i
     first = torch.zeros(1, 2, 2, 3)
     second = torch.ones(1, 2, 2, 3)
 
-    images, audio = collector.run(
+    images, audio, _ = collector.run(
         images=[first, second],
         load_balance=[False],
         audio=[None],
@@ -225,7 +225,7 @@ def test_worker_list_input_sends_one_completion_sequence_with_last_only_on_final
     module.get_client_session = _fake_get_client_session
     module.encode_audio_payload = lambda _audio: None
 
-    images, audio = collector.run(
+    images, audio, _ = collector.run(
         images=[first, second],
         load_balance=[False],
         audio=[None],
@@ -275,7 +275,7 @@ def test_audio_only_worker_sends_one_completion_without_image():
     module.get_client_session = _fake_get_client_session
     module.encode_audio_payload = lambda value: {"encoded": value is audio}
 
-    images, returned_audio = collector.run(
+    images, returned_audio, _ = collector.run(
         images=None,
         audio=[audio],
         multi_job_id=["audio-job"],
@@ -316,7 +316,7 @@ def test_audio_only_master_combines_local_and_worker_audio():
     )
     module.prompt_server.distributed_pending_jobs = {"audio-job": queue}
 
-    images, combined_audio = asyncio.run(
+    images, combined_audio, _ = asyncio.run(
         collector.execute(
             images=None,
             audio=master_audio,
@@ -349,7 +349,7 @@ def test_delegate_only_audio_collects_worker_audio_without_placeholder_image():
     )
     module.prompt_server.distributed_pending_jobs = {"delegate-audio-job": queue}
 
-    images, combined_audio = asyncio.run(
+    images, combined_audio, _ = asyncio.run(
         collector.execute(
             images=None,
             audio=None,
