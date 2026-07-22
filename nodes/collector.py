@@ -590,6 +590,7 @@ class DistributedCollectorNode:
                     import tempfile
                     import folder_paths
                     import uuid
+                    import os
                     from comfy_api.latest import InputImpl
                     temp_dir = folder_paths.get_temp_directory()
                     temp_file = os.path.join(temp_dir, f"dist_video_{uuid.uuid4().hex}.mp4")
