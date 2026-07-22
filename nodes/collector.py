@@ -206,6 +206,21 @@ class DistributedCollectorNode:
                         video_bytes = video.read()
                     elif isinstance(video, dict) and 'bytes' in video:
                         video_bytes = video['bytes']
+                    elif hasattr(video, 'save_to'):
+                        import tempfile
+                        import os
+                        try:
+                            from comfy_api.latest import Types
+                            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+                                tmp_name = tmp.name
+                            video.save_to(tmp_name, format=Types.VideoContainer("mp4"), codec="auto")
+                            with open(tmp_name, 'rb') as f:
+                                video_bytes = f.read()
+                        finally:
+                            try:
+                                os.unlink(tmp_name)
+                            except OSError:
+                                pass
                     else:
                         video_bytes = str(video).encode('utf-8')
                         
@@ -570,6 +585,20 @@ class DistributedCollectorNode:
                     del prompt_server.distributed_pending_jobs[multi_job_id]
 
             combined_audio = self._combine_audio(master_audio, worker_audio, self.EMPTY_AUDIO, enabled_workers)
+            if collected_video is not None and isinstance(collected_video, (bytes, bytearray)):
+                try:
+                    import tempfile
+                    import folder_paths
+                    import uuid
+                    from comfy_api.latest import InputImpl
+                    temp_dir = folder_paths.get_temp_directory()
+                    temp_file = os.path.join(temp_dir, f"dist_video_{uuid.uuid4().hex}.mp4")
+                    with open(temp_file, 'wb') as f:
+                        f.write(collected_video)
+                    collected_video = InputImpl.VideoFromFile(temp_file)
+                except Exception as e:
+                    debug_log(f"Master - Could not wrap video bytes in InputImpl: {e}")
+
             try:
                 combined = self._reorder_and_combine_tensors(
                     worker_images, enabled_workers, master_batch_size, images_on_cpu, delegate_mode, images
