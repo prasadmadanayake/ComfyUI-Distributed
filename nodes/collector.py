@@ -125,8 +125,9 @@ class DistributedCollectorNode:
             and not is_worker
             and (delegate_only or is_master_delegate_only())
         )
-        if images is None and audio is None and not remote_only_master:
-            raise ValueError("DistributedCollector requires at least one image or audio input")
+        if images is None and audio is None and video is None and not remote_only_master:
+            raise ValueError("DistributedCollector requires at least one image, audio, or video input")
+
 
         # Create empty audio if not provided
         empty_audio = {"waveform": torch.zeros(1, 2, 1), "sample_rate": 44100}

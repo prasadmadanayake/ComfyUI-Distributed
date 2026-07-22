@@ -107,6 +107,13 @@ def save_config(config):
         os.replace(tmp_path, _config_path())
         invalidate_config_cache()
         return True
+    except PermissionError:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        log("Permission denied when saving config. Using in-memory defaults.")
+        return False
     except Exception as e:
         try:
             os.unlink(tmp_path)
