@@ -54,7 +54,7 @@ class LTX23_KeyframePromptGenerator:
                 endpoint = f"{base_url}/v1/chat/completions"
             
             try:
-                response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+                response = requests.post(endpoint, headers=headers, json=payload, timeout=3000)
                 if response.status_code != 200:
                     return (f"API Error ({response.status_code}): {response.text}",)
                 return (response.json()["choices"][0]["message"]["content"].strip(),)
@@ -71,7 +71,7 @@ class LTX23_KeyframePromptGenerator:
             endpoint = f"{api_url.rstrip('/')}/api/generate"
             
             try:
-                response = requests.post(endpoint, json=payload, timeout=45)
+                response = requests.post(endpoint, json=payload, timeout=3000)
                 if response.status_code != 200:
                     return (f"Local API Error ({response.status_code}): {response.text}",)
                 return (response.json().get("response", "").strip(),)
