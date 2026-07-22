@@ -58,6 +58,7 @@ class DistributedCollectorNode:
     RETURN_NAMES = ("images", "audio", "video")
     FUNCTION = "run"
     CATEGORY = "image"
+    OUTPUT_NODE = True
     
     @staticmethod
     def _unwrap_list_input(value):

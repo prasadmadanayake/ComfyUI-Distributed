@@ -116,6 +116,7 @@ class UltimateSDUpscaleDistributed(
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "run"
     CATEGORY = "image/upscaling"
+    OUTPUT_NODE = True
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
