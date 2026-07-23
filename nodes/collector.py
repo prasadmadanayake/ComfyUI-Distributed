@@ -163,6 +163,11 @@ class DistributedCollectorNode:
 
         payloads = []
         batch_size = 0 if image_batch is None else image_batch.shape[0]
+        if isinstance(audio, list) and len(audio) == 1:
+            audio = audio[0]
+        if isinstance(video, list) and len(video) == 1:
+            video = video[0]
+
         if batch_size == 0:
             if encoded_audio is None and video is None:
                 raise ValueError("Worker completion requires image, audio, or video data")
@@ -367,6 +372,10 @@ class DistributedCollectorNode:
             await self.send_batch_to_master(images, audio, video, multi_job_id, master_url, worker_id)
             return (images, audio if audio is not None else self.EMPTY_AUDIO, video)
         else:
+            if isinstance(audio, list) and len(audio) == 1:
+                audio = audio[0]
+            if isinstance(video, list) and len(video) == 1:
+                video = video[0]
             delegate_mode = delegate_only or is_master_delegate_only()
             # Master mode: collect images and audio from workers
             enabled_workers_raw = json.loads(enabled_worker_ids)
